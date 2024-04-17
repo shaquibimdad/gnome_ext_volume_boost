@@ -60,7 +60,7 @@ const Indicator = GObject.registerClass(
   }
 );
 
-export default class QuickSettingsExampleExtension extends Extension {
+export default class VolumeBoostExtension extends Extension {
   enable() {
     this._indicator = new Indicator();
     Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
