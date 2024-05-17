@@ -67,8 +67,13 @@ export default class VolumeBoostExtension extends Extension {
   }
 
   disable() {
+    const soundSettings = new Gio.Settings({
+      schema_id: "org.gnome.desktop.sound",
+    });
+    soundSettings.set_boolean('allow-volume-above-100-percent', false);
     this._indicator.quickSettingsItems.forEach((item) => item.destroy());
     this._indicator.destroy();
     this._indicator = null;
   }
 }
+
