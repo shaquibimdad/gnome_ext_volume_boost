@@ -16,64 +16,94 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
-import GObject from "gi://GObject";
-import Gio from "gi://Gio";
-import * as Main from "resource:///org/gnome/shell/ui/main.js";
-
-import {
-  Extension,
-  gettext as _,
-} from "resource:///org/gnome/shell/extensions/extension.js";
-import {
-  QuickToggle,
-  SystemIndicator,
-} from "resource:///org/gnome/shell/ui/quickSettings.js";
+import GObject from 'gi://GObject';
+import Gio from 'gi://Gio';
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
+import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { QuickToggle, SystemIndicator } from 'resource:///org/gnome/shell/ui/quickSettings.js';
 
 const VolumeBoostToggle = GObject.registerClass(
-  class VolumeBoostToggle extends QuickToggle {
-    constructor() {
-      super({
-        title: _("Boost Volume"),
-        iconName: "org.gnome.Settings-sound-symbolic",
-        toggleMode: true,
-      });
-      this._soundSettings = new Gio.Settings({
-        schema_id: "org.gnome.desktop.sound",
-      });
-      this._soundSettings.bind(
-        "allow-volume-above-100-percent",
-        this,
-        "checked",
-        Gio.SettingsBindFlags.DEFAULT
-      );
+class VolumeBoostToggle extends QuickToggle {
+    _init() {
+        super._init({
+            title: _('Volume Boost'),
+            iconName: 'audio-volume-high-symbolic',
+            toggleMode: true,
+        });
+
+        this._soundSettings = new Gio.Settings({
+            schema_id: 'org.gnome.desktop.sound',
+        });
+
+        this._soundSettings.bind(
+            'allow-volume-above-100-percent',
+            this,
+            'checked',
+            Gio.SettingsBindFlags.DEFAULT
+        );
     }
-  }
-);
+});
 
 const Indicator = GObject.registerClass(
-  class Indicator extends SystemIndicator {
-    constructor() {
-      super();
-      const toggle = new VolumeBoostToggle();
-      this.quickSettingsItems.push(toggle);
+class Indicator extends SystemIndicator {
+    _init() {
+        super._init();
+
+        this._toggle = new VolumeBoostToggle();
+        this.quickSettingsItems.push(this._toggle);
     }
-  }
-);
+});
 
 export default class VolumeBoostExtension extends Extension {
-  enable() {
-    this._indicator = new Indicator();
-    Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
-  }
+    enable() {
+        this._indicator = new Indicator();
+        Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
 
-  disable() {
-    const soundSettings = new Gio.Settings({
-      schema_id: "org.gnome.desktop.sound",
-    });
-    soundSettings.set_boolean('allow-volume-above-100-percent', false);
-    this._indicator.quickSettingsItems.forEach((item) => item.destroy());
-    this._indicator.destroy();
-    this._indicator = null;
-  }
+        // Connect to PulseAudio
+        this._pulseInterface = Gio.DBusProxy.makeProxyWrapper(`
+            <node>
+                <interface name="org.PulseAudio.Core1.Device">
+                    <property name="Volume" type="d" access="readwrite"/>
+                    <property name="BaseVolume" type="d" access="read"/>
+                </interface>
+            </node>
+        `);
+
+        this._pulseProxy = new Gio.DBusProxy({
+            g_connection: Gio.DBus.session,
+            g_interface_name: 'org.PulseAudio.Core1.Device',
+            g_name: 'org.PulseAudio1',
+            g_object_path: '/org/pulseaudio/core1/sink0',
+            g_interface_info: null,
+        });
+
+        this._pulseProxy.init_async(0, null, null);
+    }
+
+    async disable() {
+        // Disable volume boost first
+        const soundSettings = new Gio.Settings({
+            schema_id: 'org.gnome.desktop.sound',
+        });
+        soundSettings.set_boolean('allow-volume-above-100-percent', false);
+
+        try {
+            // Reset volume to 100% if needed
+            await this._pulseProxy.init_async(0, null, null);
+            const volume = await this._pulseProxy.get_volume();
+            const baseVolume = await this._pulseProxy.get_base_volume();
+
+            if (volume > baseVolume) {
+                this._pulseProxy.set_volume(baseVolume);
+            }
+        } catch (e) {
+            logError(e, 'Failed to reset volume');
+        }
+
+        // Clean up
+        this._indicator.quickSettingsItems.forEach(item => item.destroy());
+        this._indicator.destroy();
+        this._indicator = null;
+        this._pulseProxy = null;
+    }
 }
-

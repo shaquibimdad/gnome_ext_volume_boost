@@ -1,0 +1,12 @@
+<schemalist>
+  <schema id="org.gnome.shell.extensions.volume-boost" path="/org/gnome/shell/extensions/volume-boost/">
+    <key name="enable-boost" type="b">
+      <default>false</default>
+      <summary>Enable volume boost</summary>
+    </key>
+    <key name="original-volumes" type="as">
+      <default>[]</default>
+      <summary>Original volume levels</summary>
+    </key>
+  </schema>
+</schemalist>
