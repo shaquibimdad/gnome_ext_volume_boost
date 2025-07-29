@@ -59,6 +59,12 @@ export default class VolumeBoostExtension extends Extension {
         this._indicator = new Indicator();
         Main.panel.statusArea.quickSettings.addExternalIndicator(this._indicator);
 
+        // Enable volume boost feature
+        const soundSettings = new Gio.Settings({
+            schema_id: 'org.gnome.desktop.sound',
+        });
+        soundSettings.set_boolean('allow-volume-above-100-percent', true);
+
         // Connect to PulseAudio
         this._pulseInterface = Gio.DBusProxy.makeProxyWrapper(`
             <node>
@@ -81,11 +87,11 @@ export default class VolumeBoostExtension extends Extension {
     }
 
     async disable() {
-        // Disable volume boost first
-        const soundSettings = new Gio.Settings({
-            schema_id: 'org.gnome.desktop.sound',
-        });
-        soundSettings.set_boolean('allow-volume-above-100-percent', false);
+        // Don't force disable volume boost setting (keep user preference)
+        // const soundSettings = new Gio.Settings({
+        //     schema_id: 'org.gnome.desktop.sound',
+        // });
+        // soundSettings.set_boolean('allow-volume-above-100-percent', false);
 
         try {
             // Reset volume to 100% if needed
