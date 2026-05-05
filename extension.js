@@ -64,52 +64,44 @@ export default class VolumeBoostExtension extends Extension {
             schema_id: 'org.gnome.desktop.sound',
         });
         soundSettings.set_boolean('allow-volume-above-100-percent', true);
+    }
 
-        // Connect to PulseAudio
-        this._pulseInterface = Gio.DBusProxy.makeProxyWrapper(`
-            <node>
-                <interface name="org.PulseAudio.Core1.Device">
-                    <property name="Volume" type="d" access="readwrite"/>
-                    <property name="BaseVolume" type="d" access="read"/>
-                </interface>
-            </node>
-        `);
+    async _runCommand(argv) {
+        const proc = Gio.Subprocess.new(argv, Gio.SubprocessFlags.NONE);
 
-        this._pulseProxy = new Gio.DBusProxy({
-            g_connection: Gio.DBus.session,
-            g_interface_name: 'org.PulseAudio.Core1.Device',
-            g_name: 'org.PulseAudio1',
-            g_object_path: '/org/pulseaudio/core1/sink0',
-            g_interface_info: null,
+        await new Promise((resolve, reject) => {
+            proc.wait_check_async(null, (_self, result) => {
+                try {
+                    if (proc.wait_check_finish(result))
+                        resolve();
+                    else
+                        reject(new Error(`${argv[0]} exited with non-zero status`));
+                } catch (e) {
+                    reject(e);
+                }
+            });
         });
+    }
 
-        this._pulseProxy.init_async(0, null, null);
+    async _resetVolumeTo100Percent() {
+        try {
+            await this._runCommand(['wpctl', 'set-volume', '@DEFAULT_AUDIO_SINK@', '1.0']);
+            return;
+        } catch (_wpctlError) {}
+
+        await this._runCommand(['pactl', 'set-sink-volume', '@DEFAULT_SINK@', '100%']);
     }
 
     async disable() {
-        // Don't force disable volume boost setting (keep user preference)
-        // const soundSettings = new Gio.Settings({
-        //     schema_id: 'org.gnome.desktop.sound',
-        // });
-        // soundSettings.set_boolean('allow-volume-above-100-percent', false);
-
         try {
-            // Reset volume to 100% if needed
-            await this._pulseProxy.init_async(0, null, null);
-            const volume = await this._pulseProxy.get_volume();
-            const baseVolume = await this._pulseProxy.get_base_volume();
-
-            if (volume > baseVolume) {
-                this._pulseProxy.set_volume(baseVolume);
-            }
+            await this._resetVolumeTo100Percent();
         } catch (e) {
             logError(e, 'Failed to reset volume');
         }
 
         // Clean up
-        this._indicator.quickSettingsItems.forEach(item => item.destroy());
-        this._indicator.destroy();
+        this._indicator?.quickSettingsItems?.forEach(item => item.destroy());
+        this._indicator?.destroy();
         this._indicator = null;
-        this._pulseProxy = null;
     }
 }
